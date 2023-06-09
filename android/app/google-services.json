@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "237481545433",
+    "project_id": "tefillin-7f1b5",
+    "storage_bucket": "tefillin-7f1b5.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:237481545433:android:0b7cf6174cfaab2ea4b8c8",
+        "android_client_info": {
+          "package_name": "com.example.tefillin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "237481545433-autreg6767f0qdmolu5rete4lpo38n2h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDF3WlWTB5eMzvmQ4wxtWakANfGoYc7Bfs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "237481545433-2bkgir8j6bdse56r92gkvh9kv5r3tnpc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
