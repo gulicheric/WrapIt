@@ -1,14 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tefillin/feed/feed_page.dart';
 import 'package:tefillin/main.dart';
-import 'package:tefillin/widgets/feed_screen.dart';
 
 class EditUsername extends StatefulWidget {
   final Function? onUsernameUpdated;
 
-  const EditUsername({Key? key, this.onUsernameUpdated}) : super(key: key);
+  final String username;
+
+  const EditUsername({Key? key, this.onUsernameUpdated, required this.username})
+      : super(key: key);
 
   @override
   State<EditUsername> createState() => _EditUsernameState();
@@ -23,7 +24,7 @@ class _EditUsernameState extends State<EditUsername> {
   @override
   void initState() {
     super.initState();
-    currentUsername = FirebaseAuth.instance.currentUser?.displayName;
+    currentUsername = widget.username;
     _textEditingController = TextEditingController(text: currentUsername);
   }
 

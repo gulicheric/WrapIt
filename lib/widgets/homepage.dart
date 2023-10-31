@@ -15,75 +15,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 import '../profile/profile_page.dart';
 import 'camera.dart';
-import 'feed_screen.dart';
-
-class Home extends StatefulWidget {
-  const Home({super.key});
-
-  @override
-  State<Home> createState() => _HomeState();
-}
-
-class _HomeState extends State<Home> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: MyHomePage(),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key}) : super(key: key);
-
-  @override
-  _MyHomePageState createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _selectedIndex = 0;
-  final List<Widget> _pages = [
-    HomePage(),
-    FeedScreen(
-      followingIds: [],
-    ),
-    ProfilePage(),
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Feed',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        elevation: 0,
-        selectedItemColor: Theme.of(context).shadowColor,
-        unselectedItemColor: Theme.of(context).focusColor,
-      ),
-    );
-  }
-}
+import '../feed/feed_screen.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -95,6 +27,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   File? _image;
   final ImagePicker _picker = ImagePicker();
+  final ScrollController _scrollController = ScrollController();
 
   Future<void> _openCamera() async {
     final pickedFile = await _picker.pickImage(source: ImageSource.camera);
@@ -145,7 +78,7 @@ class _HomePageState extends State<HomePage> {
         future: _getFollowingIds(context),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
+            return Center(child: Container());
           }
           if (snapshot.hasError) {
             return Center(child: Text('Something went wrong'));
@@ -154,7 +87,13 @@ class _HomePageState extends State<HomePage> {
             return Center(child: Text('No data available'));
           }
 
-          return FeedScreen(followingIds: snapshot.data!);
+          print("hyeifjlasdfjalsjdf");
+          print("Following ids: ${snapshot.data}");
+
+          return FeedScreen(
+            followingIds: snapshot.data!,
+            controller: _scrollController,
+          );
         },
       ),
     );
@@ -223,20 +162,10 @@ Future<void> _uploadImageToFirebase(File image) async {
     'likeCount': 0,
     'postedBy': currentUser?.uid,
     'caption': "",
+    'reports': 0
   });
-}
 
-Stream<QuerySnapshot> getFeedPostsStream(List<String> followingIds) {
-  final postsCollection = FirebaseFirestore.instance.collection('Posts');
-
-  if (followingIds.isEmpty) {
-    return Stream.fromIterable([]);
-  }
-
-  return postsCollection
-      .where('postedBy', whereIn: followingIds)
-      .orderBy('createdAt', descending: true)
-      .snapshots();
+  incrementStreak(currentUser!.uid);
 }
 
 Future<List<String>> _getFollowingIds(BuildContext context) async {
@@ -252,5 +181,37 @@ Future<List<String>> _getFollowingIds(BuildContext context) async {
 
   List<String> followingIds =
       List<String>.from(userDoc.get('following') as List<dynamic>);
+  followingIds.add(currentUser.uid);
   return followingIds;
+}
+
+void incrementStreak(String userId) {
+  FirebaseFirestore.instance
+      .collection('Users')
+      .doc(userId)
+      .update({'streak': FieldValue.increment(1)})
+      .then((value) => print("Streak incremented"))
+      .catchError((error) => print("Failed to increment streak: $error"));
+
+  // if streak is now higher than largest_streak, update largest_streak
+  FirebaseFirestore.instance
+      .collection('Users')
+      .doc(userId)
+      .get()
+      .then((DocumentSnapshot documentSnapshot) {
+    if (documentSnapshot.exists) {
+      int streak = documentSnapshot.get('streak');
+      int largestStreak = documentSnapshot.get('largest_streak');
+
+      if (streak > largestStreak) {
+        FirebaseFirestore.instance
+            .collection('Users')
+            .doc(userId)
+            .update({'largest_streak': streak})
+            .then((value) => print("Largest streak updated"))
+            .catchError(
+                (error) => print("Failed to update largest streak: $error"));
+      }
+    }
+  });
 }

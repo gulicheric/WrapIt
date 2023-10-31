@@ -5,9 +5,14 @@ import 'package:flutter/src/widgets/framework.dart';
 import 'package:flutter/src/widgets/placeholder.dart';
 
 class SubmitButton extends StatelessWidget {
-  const SubmitButton({super.key, required this.text});
+  const SubmitButton({
+    super.key,
+    required this.text,
+    this.color = const Color.fromARGB(255, 22, 131, 194),
+  });
 
   final String text;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +23,7 @@ class SubmitButton extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 19.0),
       margin: EdgeInsets.symmetric(horizontal: 20.0),
       decoration: BoxDecoration(
-        color: Theme.of(context).accentColor,
+        color: color,
         borderRadius: BorderRadius.circular(30.0),
       ),
       child: Center(

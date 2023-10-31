@@ -1,19 +1,19 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:full_screen_image/full_screen_image.dart';
-import 'package:flutter/src/widgets/placeholder.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tefillin/widgets/following_list.dart';
-import 'package:insta_image_viewer/insta_image_viewer.dart';
-import 'package:easy_image_viewer/easy_image_viewer.dart';
-import 'package:tefillin/widgets/settings.dart';
+import 'package:tefillin/profile/following_list.dart';
+import 'package:tefillin/profile/group_list.dart';
+import 'package:tefillin/roadmap/roadmap_screen.dart';
+import 'package:tefillin/settings/settings_screen.dart';
+import 'package:tefillin/widgets/custom_container.dart';
 
 import '../widgets/calendar.dart';
-import '../widgets/followers_list.dart';
+import 'followers_list.dart';
+import '../widgets/profile_following_follower_group_row_info.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -25,13 +25,11 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
-    User? user = FirebaseAuth.instance.currentUser;
-    String? photoUrl = user!.photoURL;
-    print("Photo url: " + photoUrl!);
+    User? user = FirebaseAuth.instance.currentUser!;
     var size = MediaQuery.of(context).size;
 
-    return FutureBuilder<DocumentSnapshot>(
-      future: getUserData(user.uid),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: getUserDataStream(user.uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
@@ -41,11 +39,26 @@ class _ProfilePageState extends State<ProfilePage> {
           return Center(child: Text('Something went wrong'));
         }
 
-        List<String> following =
-            List<String>.from(snapshot.data!['following'] ?? []);
-        List<String> followers =
-            List<String>.from(snapshot.data!['followers'] ?? []);
-        final currentUserName = FirebaseAuth.instance.currentUser!.displayName;
+        if (!snapshot.hasData) {
+          return Center(child: Text('No data available'));
+        }
+
+        DocumentSnapshot? document = snapshot.data;
+
+        // check to see if document has the element 'following' and if not, print an empty list
+        if (!document!.exists) {
+          return Center(child: Text('Document does not exist'));
+        }
+
+        List<String> following = List<String>.from(document['following'] ?? []);
+        List<String> followers = List<String>.from(document['followers'] ?? []);
+        final currentUserName = document['username'];
+        final photoUrl = document['photoUrl'];
+        final userStreak = document['streak'].toString();
+        List userGroups = document['groups'];
+        final totalPosts = document['posts'].length.toString();
+        final longestStreak = document['largest_streak'].toString();
+
         return Scaffold(
           body: SafeArea(
             child: SingleChildScrollView(
@@ -59,10 +72,15 @@ class _ProfilePageState extends State<ProfilePage> {
                       Padding(
                         padding: const EdgeInsets.only(left: 12.0),
                         child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: GestureDetector(
-                                onTap: () => Navigator.of(context).pop(),
-                                child: Icon(Icons.arrow_back_ios_new))),
+                          alignment: Alignment.centerLeft,
+                          child: GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).pop(
+                                  true); // passing a value back to first page
+                            },
+                            child: Icon(Icons.arrow_back_ios_new),
+                          ),
+                        ),
                       ),
                       Padding(
                         padding: const EdgeInsets.only(right: 12.0),
@@ -81,142 +99,153 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ],
                   ),
+                  SizedBox(height: 2),
                   CircleAvatar(
-                    radius:
-                        50, // set the radius to half of the image width/height to make it circular
+                    radius: 40,
                     backgroundImage:
                         photoUrl != null ? NetworkImage(photoUrl) : null,
                   ),
-                  SizedBox(height: 20),
-                  Text("@${currentUserName}",
-                      style: GoogleFonts.indieFlower(
-                          textStyle: TextStyle(
-                              fontSize: 25,
-                              fontWeight: FontWeight.w700,
-                              color: Theme.of(context).shadowColor))),
-                  SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => FollowingList(),
-                            ),
-                          );
-                        },
-                        child: FollowersFollowingTab(
-                          bottomText: 'Following',
-                          topText: following.length.toString(),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 12,
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => FollowersList(),
-                            ),
-                          );
-                        },
-                        child: FollowersFollowingTab(
-                          bottomText: 'Followers',
-                          topText: followers.length.toString(),
-                        ),
-                      ),
-                    ],
-                  ),
+                  SizedBox(height: 15),
+                  Text("${currentUserName}",
+                      style: TextStyle(
+                          fontFamily: 'CircularBlack',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).shadowColor)),
                   SizedBox(height: 10),
-                  TableBasicsExample()
-                  // GestureDetector(
-                  //   onTap: () => Navigator.of(context).push(
-                  //     MaterialPageRoute(
-                  //       builder: (context) => TableBasicsExample(),
-                  //     ),
-                  //   ),
-                  //   child: Container(
-                  //     decoration: BoxDecoration(
-                  //       borderRadius: BorderRadius.circular(10),
-                  //       color: Color.fromARGB(255, 35, 37, 38),
-                  //     ),
-                  //     width: size.width * .92,
-                  //     height: 60,
-                  //     child: Column(
-                  //       mainAxisAlignment: MainAxisAlignment.center,
-                  //       children: [
-                  //         TopStreakText(
-                  //             text: "You are " + "7" + " days strong!"),
-                  //       ],
-                  //     ),
-                  //   ),
+                  InfoRow(
+                    followingCount: following.length,
+                    followersCount: followers.length,
+                    groupsCount: userGroups.length,
+                    onTapFollowing: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => FollowingList(
+                            isFromYourProfile: true,
+                            uid: user.uid,
+                          ),
+                        ),
+                      );
+                    },
+                    onTapFollowers: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => FollowersList(
+                            uid: user.uid,
+                            isFromYourProfile: true,
+                          ),
+                        ),
+                      );
+                    },
+                    onTapGroups: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => GroupList(
+                            uid: user.uid,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  SizedBox(height: 25),
+                  CustomContainer(
+                      child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Streaks",
+                            style: TextStyle(
+                              fontSize: 18,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => RoadMapScreen(),
+                                ),
+                              );
+                            },
+                            child: Text(
+                              "Want to see another stat?",
+                              style: TextStyle(
+                                fontSize: 12,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          )
+                        ],
+                      ),
+                      SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          // total posts
+                          SizedBox(
+                            width: size.width * .22,
+                            child: Column(
+                              children: [
+                                Text(
+                                  totalPosts,
+                                  style: TextStyle(fontSize: 25),
+                                ),
+                                SizedBox(height: 10),
+                                Text("Total")
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: size.width * .25,
+                            child: Column(
+                              children: [
+                                Text(
+                                  userStreak,
+                                  style: TextStyle(fontSize: 25),
+                                ),
+                                SizedBox(height: 10),
+                                Text("Current")
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: size.width * .22,
+                            child: Column(
+                              children: [
+                                Text(
+                                  longestStreak,
+                                  style: TextStyle(fontSize: 25),
+                                ),
+                                SizedBox(height: 10),
+                                Text("Longest")
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    ],
+                  )),
+                  SizedBox(height: 15),
+                  // Text(
+                  //   "Current Streak: " + userStreak.toString(),
+                  //   style: TextStyle(fontSize: 18),
                   // ),
-                  // SizedBox(height: 10),
-                  // FutureBuilder<QuerySnapshot>(
-                  //   future: FirebaseFirestore.instance
-                  //       .collection('Posts')
-                  //       .where('postedBy',
-                  //           isEqualTo:
-                  //               user.uid) // replace <id> with the specific id
-                  //       .orderBy('createdAt',
-                  //           descending: true) // ordering by createdAt
-                  //       .get(),
-                  //   builder: (BuildContext context,
-                  //       AsyncSnapshot<QuerySnapshot> snapshot) {
-                  //     if (snapshot.connectionState == ConnectionState.waiting) {
-                  //       return CircularProgressIndicator(); // showing loading spinner while waiting for data
-                  //     }
-
-                  //     if (!snapshot.hasData) {
-                  //       return Text(
-                  //           'No posts found.'); // showing message if no posts found
-                  //     }
-
-                  //     final List<DocumentSnapshot> documents =
-                  //         snapshot.data!.docs;
-
-                  //     return ListView.builder(
-                  //       physics: const NeverScrollableScrollPhysics(),
-                  //       shrinkWrap: true,
-                  //       itemCount: documents.length,
-                  //       itemBuilder: (BuildContext context, int index) {
-                  //         return ListTile(
-                  //           title: Column(
-                  //             crossAxisAlignment: CrossAxisAlignment.start,
-                  //             children: [
-                  //               DateProfileList(
-                  //                 text: documents[index].get('dateManipulated'),
-                  //               ),
-                  //               SizedBox(height: 10),
-                  //               InstaImageViewer(
-                  //                 child: Container(
-                  //                   width: 50,
-                  //                   height: 100,
-                  //                   decoration: BoxDecoration(
-                  //                     image: DecorationImage(
-                  //                       image: NetworkImage(
-                  //                           documents[index].get('url')),
-                  //                       fit: BoxFit.cover,
-                  //                     ),
-                  //                     borderRadius: BorderRadius.circular(10),
-                  //                   ),
-                  //                 ),
-                  //               ),
-                  //               SizedBox(height: 15)
-                  //             ],
-                  //           ),
-                  //         );
-                  //       },
-                  //     );
-                  //   },
-                  // )
+                  SizedBox(height: 0),
+                  Container(
+                    padding: EdgeInsets.only(left: 20, bottom: 15, top: 5),
+                    margin: EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.white.withOpacity(.1),
+                    ),
+                    child: TableBasicsExample(),
+                  )
                 ])),
           ),
         );
-
-        // ... (the rest of the ProfilePage layout
       },
     );
   }
@@ -332,8 +361,29 @@ class DateProfileList extends StatelessWidget {
   }
 }
 
-Future<DocumentSnapshot> getUserData(String userId) async {
+Stream<DocumentSnapshot> getUserDataStream(String userId) {
   FirebaseFirestore firestore = FirebaseFirestore.instance;
   DocumentReference userDocRef = firestore.collection('Users').doc(userId);
-  return await userDocRef.get();
+  return userDocRef.snapshots();
+}
+
+Widget buildInfoRow(int count, String label, Function onTap) {
+  return GestureDetector(
+    onTap: () {
+      onTap();
+    },
+    child: Row(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 1.0),
+          child: Text(
+            count.toString(),
+            style: TextStyle(fontSize: 16, fontFamily: 'CircularBlack'),
+          ),
+        ),
+        SizedBox(width: 4),
+        Text(label),
+      ],
+    ),
+  );
 }

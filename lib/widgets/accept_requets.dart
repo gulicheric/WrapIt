@@ -108,6 +108,24 @@ class _AcceptGroupRequestsState extends State<AcceptGroupRequests> {
                                     'users':
                                         FieldValue.arrayUnion([requests[index]])
                                   });
+
+                                  // remove from user's requests
+                                  await FirebaseFirestore.instance
+                                      .collection('Users')
+                                      .doc(requests[index])
+                                      .update({
+                                    'groups_requested':
+                                        FieldValue.arrayRemove([widget.groupId])
+                                  });
+
+                                  // add to user's groups
+                                  await FirebaseFirestore.instance
+                                      .collection('Users')
+                                      .doc(requests[index])
+                                      .update({
+                                    'groups':
+                                        FieldValue.arrayUnion([widget.groupId])
+                                  });
                                 },
                               ),
                               IconButton(
@@ -119,6 +137,15 @@ class _AcceptGroupRequestsState extends State<AcceptGroupRequests> {
                                       .update({
                                     'requests': FieldValue.arrayRemove(
                                         [requests[index]])
+                                  });
+
+                                  // remove from user's requests
+                                  await FirebaseFirestore.instance
+                                      .collection('Users')
+                                      .doc(requests[index])
+                                      .update({
+                                    'groups_requested':
+                                        FieldValue.arrayRemove([widget.groupId])
                                   });
                                 },
                               ),

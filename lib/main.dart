@@ -1,45 +1,58 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, deprecated_member_use
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, deprecated_member_use, use_build_context_synchronously
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 // ignore_for_file: prefer_const_constructors
 import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
+
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart'; // Import this package to format the date
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
-import 'package:tefillin/widgets/group_list.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:tefillin/activity/activity_screen.dart';
+import 'package:tefillin/firebase/firebase_uploads.dart';
+import 'package:tefillin/groups/group_list.dart';
+import 'package:tefillin/profile/group_list.dart';
+import 'package:tefillin/signin/sign_in_widgets.dart';
+import 'package:tefillin/posting/check_if_users_are_ready_to_posts.dart';
+import 'package:tefillin/widgets/sign_in_with_email.dart';
+import 'package:tefillin/wrapping_guide/wrapping_guide_screen.dart';
 import '../profile/profile_page.dart';
-
+import 'package:badges/badges.dart' as badges;
 import 'dart:math';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:tefillin/profile/profile_page.dart';
-import 'package:tefillin/widgets/feed_screen.dart';
+import 'package:tefillin/feed/feed_screen.dart';
 import 'package:tefillin/widgets/homepage.dart';
 import 'package:navigator_scope/navigator_scope.dart';
 
+import 'anonymous/sign_up.dart';
+import 'activity/follower_requests/accept_follower_requests.dart';
+import 'onboarding/onboarding_screen.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp();
+  // await FirebaseApi().initNotification();
   runApp(MyApp());
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 }
+
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -63,6 +76,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: backgroundColorDark,
         shadowColor: pink,
         disabledColor: textColorDark,
+        fontFamily: 'Circular',
         textTheme: TextTheme(
           bodyText1: TextStyle(color: textColorDark),
           bodyText2: TextStyle(color: textColorDark),
@@ -82,6 +96,8 @@ class MyApp extends StatelessWidget {
     }
 
     return MaterialApp(
+        scaffoldMessengerKey: scaffoldMessengerKey,
+        navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         title: 'Nested Navigator Example',
         theme: ThemeData(
@@ -91,74 +107,42 @@ class MyApp extends StatelessWidget {
         darkTheme: buildDarkThemeData(),
         themeMode: ThemeMode.dark,
         home: TestRoute());
-
-    return MaterialApp(
-      title: 'Nested Navigator Example',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.green,
-      ),
-      darkTheme: buildDarkThemeData(),
-      themeMode: ThemeMode.dark,
-      home: const Home(),
-    );
-
-    return MaterialApp.router(
-      routerConfig: _router,
-    );
-
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      darkTheme: buildDarkThemeData(),
-      themeMode: ThemeMode.dark,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: Scaffold(
-        body: Center(child: TestRoute()),
-      ),
-    );
   }
 }
 
 Future<List<String>> _getFollowingIds(BuildContext context) async {
-  User? currentUser = FirebaseAuth.instance.currentUser;
+  String? currentUser = FirebaseAuth.instance.currentUser!.uid;
   if (currentUser == null) {
     return [];
   }
 
-  FirebaseFirestore firestore = FirebaseFirestore.instance;
-  DocumentReference userDocRef =
-      firestore.collection('Users').doc(currentUser.uid);
-  DocumentSnapshot userDoc = await userDocRef.get();
+  final userDoc = await FirebaseFirestore.instance
+      .collection("Users")
+      .doc(currentUser)
+      .get();
 
-  List<String> followingIds =
-      List<String>.from(userDoc.get('following') as List<dynamic>);
-  return followingIds;
+  if (!userDoc.exists) {
+    print("true?");
+    List<String> returnError = ["Error"];
+    return returnError;
+  }
+
+  final List<String> userGroups = List<String>.from(userDoc['groups'] ?? []);
+  final List<String> following = List<String>.from(userDoc['following'] ?? []);
+
+  Set<String> userIds = Set.from(following); // Use a set for uniqueness
+  for (String groupId in userGroups) {
+    final groupDoc = await FirebaseFirestore.instance
+        .collection("Groups")
+        .doc(groupId)
+        .get();
+    final List<String> groupMembers =
+        List<String>.from(groupDoc['users'] ?? []);
+    userIds.addAll(groupMembers);
+  }
+
+  return userIds.toList();
 }
-
-final GoRouter _router = GoRouter(
-  routes: <RouteBase>[
-    GoRoute(
-      path: '/',
-      builder: (BuildContext context, GoRouterState state) {
-        return const FeedScreen(
-          followingIds: [],
-        );
-      },
-      routes: <RouteBase>[
-        GoRoute(
-          path: 'details',
-          builder: (BuildContext context, GoRouterState state) {
-            return FeedScreen(
-              followingIds: [],
-            );
-          },
-        ),
-      ],
-    ),
-  ],
-);
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -170,21 +154,32 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   File? _image;
   final ImagePicker _picker = ImagePicker();
+  final ScrollController _feedScrollController = ScrollController();
+  final ValueNotifier<bool> _showFABNotifier = ValueNotifier<bool>(false);
 
   Future<void> _openCamera() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+    final pickedFile = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+    );
 
     if (pickedFile != null) {
       File image = File(pickedFile.path);
       try {
-        await _uploadImageToFirebase(image);
+        // await _uploadImageToFirebase(image);
         setState(() {
           _image = image;
         });
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => CheckIfUsersAreReadyToPost(image: image),
+          ),
+        );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
+            content: Text(e.toString().replaceAll('Error: ', '')),
             showCloseIcon: true,
             duration: Duration(seconds: 10),
           ),
@@ -196,66 +191,171 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+
+    _feedScrollController.addListener(() {
+      if (_feedScrollController.offset > 2000 && !_showFABNotifier.value) {
+        _showFABNotifier.value = true;
+      } else if (_feedScrollController.offset <= 2000 &&
+          _showFABNotifier.value) {
+        _showFABNotifier.value = false;
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: 0, right: 0),
-        child: FloatingActionButton(
-          elevation: 0,
-          onPressed: _openCamera,
-          child: Icon(Icons.camera_alt),
-        ),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _showFABNotifier,
+            builder: (context, showFAB, child) {
+              return Visibility(
+                visible: showFAB,
+                child: FloatingActionButton(
+                  heroTag: null,
+                  elevation: 0,
+                  backgroundColor: Color.fromARGB(255, 68, 138, 25),
+                  mini: true,
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+
+                    _feedScrollController.animateTo(
+                      0,
+                      duration: Duration(milliseconds: 500),
+                      curve: Curves.easeInOut,
+                    );
+                  },
+                  child: Icon(Icons.arrow_upward),
+                ),
+              );
+            },
+          ),
+          SizedBox(height: 30),
+          Padding(
+            padding: EdgeInsets.only(bottom: 0, right: 0),
+            child: (!FirebaseAuth.instance.currentUser!.isAnonymous)
+                ? GestureDetector(
+                    onLongPress: () {
+                      HapticFeedback.mediumImpact();
+                      _showOptions();
+                    }, // handle the long press here
+                    child: FloatingActionButton(
+                      elevation: 0,
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        _openCamera();
+                      },
+                      child: Icon(Icons.camera_alt),
+                    ),
+                  )
+                : null,
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            SizedBox(height: 5),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("WrapIt",
-                      style: GoogleFonts.sigmarOne(
-                          textStyle: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w700,
-                              color: Theme.of(context).accentColor))),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => GroupsMainPage(),
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.group,
-                          size: 30,
-                        ),
-                      ),
-                      SizedBox(width: 10),
-                      GestureDetector(
-                          onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => ProfilePage(),
-                                ),
-                              ),
-                          child: Icon(
-                            Icons.person,
-                            size: 30,
-                          )),
-                    ],
-                  )
-                ],
-              ),
-            ),
-            SizedBox(height: 10),
-            Expanded(child: FeedSection()),
+            HomepageTopBarWithNameAndIcons(
+                scrollController: _feedScrollController),
+
+            // SizedBox(height: 5),
+            // SizedBox(height: 10),
+            Expanded(child: FeedSection(controller: _feedScrollController)),
           ],
         ),
       ),
     );
+  }
+
+  void _showOptions() {
+    var size = MediaQuery.of(context).size;
+    showModalBottomSheet(
+        backgroundColor: Colors.black,
+        context: context,
+        builder: (BuildContext context) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.1),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(15),
+                topRight: const Radius.circular(15),
+              ),
+            ),
+            height: 230,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(height: 15),
+                Container(
+                  height: 5.0,
+                  width: size.width * .1,
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.all(Radius.circular(50.0)),
+                  ),
+                ),
+                SizedBox(height: 10),
+                Container(
+                  margin: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.1),
+                      borderRadius: BorderRadius.all(Radius.circular(15))),
+                  child: ListTile(
+                    title: Row(
+                      children: [
+                        Icon(Icons.person_outline),
+                        SizedBox(width: 10),
+                        Text('You putting on tefillin'),
+                      ],
+                    ),
+                    onTap: () => _openCamera(),
+                  ),
+                ),
+                Container(
+                  height: 60,
+                  margin: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(.1),
+                      borderRadius: BorderRadius.all(Radius.circular(15))),
+                  child: ListTile(
+                    title: Row(
+                      children: [
+                        Icon(Icons.sentiment_satisfied_alt),
+                        SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            SizedBox(height: 5),
+                            Text(
+                              'Another Jew putting on tefillin',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color.fromARGB(255, 139, 138, 138)),
+                            ),
+                            Text(
+                              'Coming Soon',
+                              style: TextStyle(fontSize: 20),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      // _chooseFromGallery(); // Add your method to choose from gallery here
+                    },
+                  ),
+                ),
+                // Add more options if you like
+              ],
+            ),
+          );
+        });
   }
 }
 
@@ -317,7 +417,10 @@ Future<void> _uploadImageToFirebase(File image) async {
     'likeCount': 0,
     'postedBy': currentUser?.uid,
     'caption': "",
+    'reports': 0
   });
+
+  incrementStreak(currentUser!.uid);
 
   // Fetch user document from the 'Users' collection
   DocumentReference userRef =
@@ -329,28 +432,92 @@ Future<void> _uploadImageToFirebase(File image) async {
   });
 }
 
-class FeedSection extends StatelessWidget {
-  const FeedSection({
-    super.key,
-  });
+class FeedSection extends StatefulWidget {
+  const FeedSection({Key? key, required this.controller}) : super(key: key);
+
+  final ScrollController controller;
+
+  @override
+  _FeedSectionState createState() => _FeedSectionState();
+}
+
+class _FeedSectionState extends State<FeedSection> {
+  final ScrollController _scrollController = ScrollController();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<String>>(
-      future: _getFollowingIds(context),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Something went wrong'));
-        }
-        if (snapshot.data == null) {
-          return Center(child: Text('No data available'));
-        }
-
-        return FeedScreen(followingIds: snapshot.data!);
+    print("Entering feed section: ");
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {}); // refresh the feed
       },
+      child: FutureBuilder<List<String>>(
+        future: _getFollowingIds(context),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Padding(
+                padding: EdgeInsets.only(top: 1000.0), child: Container());
+          }
+          if (snapshot.hasError) {
+            print("hell nah");
+            return Center(child: Text('Something went wrong'));
+          }
+          if (snapshot.data == null) {
+            print("lets test");
+            return Center(child: Text('No data available'));
+          }
+
+          if (snapshot.data!.isEmpty) {
+            var size = MediaQuery.of(context).size;
+            return Center(
+                child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text("Join groups to see posts and follow people"),
+                SizedBox(height: 20),
+                GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => GroupsMainPage(
+                            selectedTab: 1,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 10.0),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: Theme.of(context).primaryColor,
+                      ),
+                      child: Text("Join groups",
+                          style: TextStyle(
+                            color: Theme.of(context).accentColor,
+                          )),
+                    ))
+              ],
+            ));
+          }
+
+          if (snapshot.data!.first == "Error") {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => OnboardingScreen(),
+                ),
+              );
+            });
+            return Container(); // Return an empty container or another widget
+          }
+
+          return FeedScreenss(
+            followingIds: snapshot.data!,
+            controller: widget.controller,
+          );
+        },
+      ),
     );
   }
 }
@@ -374,6 +541,7 @@ class _HomeState extends State<Home> {
       icon: Icon(Icons.person),
       label: 'Profile',
     ),
+    NavigationDestination(label: 'Search', icon: Icon(Icons.search)),
   ];
 
   final navigatorKeys = [
@@ -396,6 +564,7 @@ class _HomeState extends State<Home> {
 
   @override
   Widget build(BuildContext context) {
+    print("This is actually where to start: ");
     final body = NavigatorScope(
       currentDestination: currentTab,
       destinationCount: tabs.length,
@@ -407,7 +576,7 @@ class _HomeState extends State<Home> {
               future: _getFollowingIds(context),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
+                  return Center(child: Container());
                 }
                 if (snapshot.hasError) {
                   return Center(child: Text('Something went wrong'));
@@ -416,7 +585,7 @@ class _HomeState extends State<Home> {
                   return Center(child: Text('No data available'));
                 }
 
-                return FeedScreen(followingIds: snapshot.data!);
+                return Text("hi");
               },
             ),
           );
@@ -565,145 +734,327 @@ class TestRoute extends StatefulWidget {
 }
 
 class _TestRouteState extends State<TestRoute> {
+  var flag = false;
+  bool _internetFlag = true;
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _checkConnectivity();
+  }
+
   @override
   Widget build(BuildContext context) {
-    var size = MediaQuery.of(context).size;
+    // if (!_internetFlag) {
+    //   return NoInternetConnection(context);
+    // }
+
     return Scaffold(
         body: SafeArea(
-      child: StreamBuilder(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: ((context, snapshot) {
-          var size = MediaQuery.of(context).size;
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return CircularProgressIndicator();
-          } else if (snapshot.hasError) {
-            return Text("Error");
-          } else if (snapshot.hasData) {
-            return MainScreen();
-          }
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                children: [
-                  SizedBox(height: 200),
-                  SizedBox(
-                      width: size.width * .8,
-                      child: Image.asset('assets/images/tefillin.png')),
-                  Text("One day at a time",
-                      style: GoogleFonts.sigmarOne(
-                          textStyle: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w700,
-                              color: Color.fromARGB(255, 224, 117, 128))))
-                ],
-              ),
-              Column(
-                children: [
-                  GestureDetector(
-                      onTap: () async {
-                        try {
-                          final googleSignIn = GoogleSignIn();
-                          GoogleSignInAccount? user;
-                          final googleUser = await googleSignIn.signIn();
-                          if (googleUser == null) return;
-                          user = googleUser;
+            child: StreamBuilder(
+                stream: FirebaseAuth.instance.authStateChanges(),
+                builder: ((context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Container();
+                  } else if (snapshot.hasError) {
+                    return Text("Error");
+                  }
+                  if (snapshot.data != null) {
+                    // return AutomaticSignout(text: "snapsh");
 
-                          final googleAuth = await googleUser.authentication;
-                          final credential = GoogleAuthProvider.credential(
-                              accessToken: googleAuth.accessToken,
-                              idToken: googleAuth.idToken);
+                    User user = snapshot.data as User;
+                    DateTime creationTime = user.metadata.creationTime!;
+                    DateTime currentTime = DateTime.now();
+                    Duration difference = currentTime.difference(creationTime);
 
-                          UserCredential userCredential = await FirebaseAuth
-                              .instance
-                              .signInWithCredential(credential);
-                          User? firebaseUser = userCredential.user;
+                    if (flag && snapshot.hasData) {
+                      return MainScreen();
+                    }
 
-                          // Check if user exists in the Users collection
-                          FirebaseFirestore firestore =
-                              FirebaseFirestore.instance;
-                          DocumentReference userDocRef = firestore
-                              .collection('Users')
-                              .doc(firebaseUser!.uid);
-                          DocumentSnapshot userDoc = await userDocRef.get();
-
-                          if (!userDoc.exists) {
-                            // Add user to the Users collection
-                            String username = user.email.split('@')[0];
-                            DateTime now = DateTime.now();
-                            String createdAt = now.toUtc().toIso8601String();
-
-                            await userDocRef.set({
-                              'username': username,
-                              'createdAt': createdAt,
-                              'following': [],
-                              'followers': [],
-                              'posts': [],
-                              'photoUrl': ""
-                            });
+                    if (snapshot.hasData && difference.inSeconds > 10) {
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('Users')
+                            .doc(user.uid)
+                            .get(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Container();
+                            // return CircularProgressIndicator(); // show a loader while waiting
+                          } else if (snapshot.hasError) {
+                            return Text('Error: ${snapshot.error}');
                           }
-                        } on PlatformException catch (e) {
-                          if (e.code == 'sign_in_canceled') {
-                            // The user has canceled the sign-in process
-                            if (kDebugMode) {
-                              print('User canceled sign-in');
-                            }
+                          if (snapshot.data!.exists) {
+                            // The document with user.uid exists in the database
+                            return MainScreen();
                           } else {
-                            // Handle other errors
-                            if (kDebugMode) {
-                              print('Error during sign-in: $e');
-                            }
+                            // The document with user.uid does not exist in the database
+                            return OnboardingScreen(); // Replace with your own logic
                           }
-                        } catch (e) {
-                          // Handle other exceptions
-                          if (kDebugMode) {
-                            print('Unexpected error during sign-in: $e');
-                          }
-                        }
+                        },
+                      );
+                    }
 
-                        setState(() {});
-                      },
-                      child: ContinueWithGoogleWidget()),
-                  SizedBox(height: 50),
-                ],
-              ),
-            ],
-          );
-        }),
-      ),
-    ));
+                    return Container();
+                  }
+
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TeffilinPictureAndBigText(),
+                      Column(
+                        children: [
+                          // GuestSignIn(
+                          //   onFlagChanged: _handleFlagChange,
+                          // ),
+                          SizedBox(height: 15),
+                          EmailAndAppleSignInOptions(),
+                          SizedBox(height: 15),
+                          GoogleSignOption(),
+                          SizedBox(height: 50),
+                        ],
+                      ),
+                    ],
+                  );
+                }))));
+  }
+
+  Scaffold NoInternetConnection(BuildContext context) {
+    return Scaffold(
+      body: Center(
+          child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 60),
+        padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Theme.of(context).primaryColor,
+        ),
+        child:
+            Text("There is no internet connection, please connect to internet"),
+      )),
+    );
+  }
+
+  void _handleFlagChange(bool newFlag) {
+    setState(() {
+      flag = newFlag;
+    });
+  }
+
+  // add the _checkConnectivity method here
+  _checkConnectivity() async {
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    await (Connectivity().checkConnectivity());
+    if (connectivityResult == ConnectivityResult.none) {
+      // No internet connection
+      setState(() {
+        _internetFlag = false;
+      });
+    } else {
+      // Internet connection is available
+      setState(() {
+        _internetFlag = true;
+      });
+    }
   }
 }
 
-class ContinueWithGoogleWidget extends StatelessWidget {
-  const ContinueWithGoogleWidget({
-    Key? key,
-  }) : super(key: key);
+class HomepageTopBarWithNameAndIcons extends StatefulWidget {
+  const HomepageTopBarWithNameAndIcons(
+      {super.key, required this.scrollController});
+
+  final ScrollController scrollController;
 
   @override
+  State<HomepageTopBarWithNameAndIcons> createState() =>
+      _HomepageTopBarWithNameAndIconsState();
+}
+
+class _HomepageTopBarWithNameAndIconsState
+    extends State<HomepageTopBarWithNameAndIcons> {
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 10),
-      margin: EdgeInsets.symmetric(horizontal: 60),
-      decoration: BoxDecoration(
-          color: Colors.white,
-          border:
-              Border.all(width: 3, color: Color.fromARGB(255, 224, 117, 128)),
-          borderRadius: BorderRadius.all(Radius.circular(16))),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Image.network(
-              "https://www.freepnglogos.com/uploads/google-logo-png/google-logo-png-suite-everything-you-need-know-about-google-newest-0.png",
-              height: 30,
-              width: 30),
-          SizedBox(width: 10),
-          Text(
-            "Continue with Google",
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Color.fromARGB(255, 224, 117, 128)),
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.heavyImpact();
+              widget.scrollController.animateTo(
+                0.0,
+                curve: Curves.easeOut,
+                duration: const Duration(milliseconds: 300),
+              );
+            },
+            child: Text("WrapIt",
+                style: GoogleFonts.sigmarOne(
+                    textStyle: TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).accentColor))),
+          ),
+          Row(
+            children: [
+              StreamBuilder(
+                  // add future stream that checks in Settings collection whether the document isCalendarPublicToAll has a 'value' of true or false
+                  stream: FirebaseFirestore.instance
+                      .collection('Users')
+                      .doc(FirebaseAuth.instance.currentUser?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Container();
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Something went wrong'));
+                    }
+
+                    var isTefillinRequired =
+                        snapshot.data!['settings.isTefillinHelpRequired'];
+
+                    return isTefillinRequired
+                        ? GestureDetector(
+                            onTap: () async {
+                              HapticFeedback.heavyImpact();
+                              final result = await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => WrappingGuideScreen(),
+                                ),
+                              );
+
+                              if (mounted && result != null && result) {
+                                setState(() {
+                                  // This will rebuild your widget when you return from the ProfilePage.
+                                  // You can also use the result to conditionally rebuild or make updates.
+                                });
+                              }
+                            },
+                            child: Icon(
+                              Icons.help_outline,
+                              size: 27,
+                            ),
+                          )
+                        : Container();
+                  }),
+              SizedBox(width: 20),
+              if (!FirebaseAuth.instance.currentUser!.isAnonymous)
+                StreamBuilder(
+                    // add future stream that checks in Settings collection whether the document isCalendarPublicToAll has a 'value' of true or false
+                    stream: FirebaseFirestore.instance
+                        .collection('Users')
+                        .doc(FirebaseAuth.instance.currentUser?.uid)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container();
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(child: Text('Something went wrong'));
+                      }
+
+                      var numberOfFollowerRequested =
+                          snapshot.data!['followers_requested'].length;
+
+                      return GestureDetector(
+                        onTap: () async {
+                          // Go through every Users document and check if the current user's uid is in the followers_requested array
+                          // If it is, then add it to the list of followers
+                          // await FirebaseFirestore.instance
+                          //     .collection("Users")
+                          //     .get()
+                          //     .then((value) => value.docs.forEach((element) {
+                          //           element.reference.update({'blockedBy': []});
+                          //         }));
+
+                          HapticFeedback.heavyImpact();
+                          final result = await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => ActivityScreen(),
+                            ),
+                          );
+
+                          if (mounted && result != null && result) {
+                            setState(() {
+                              // This will rebuild your widget when you return from the ProfilePage.
+                              // You can also use the result to conditionally rebuild or make updates.
+                            });
+                          }
+                        },
+                        child: (numberOfFollowerRequested > 0)
+                            ? badges.Badge(
+                                badgeContent: Text("•"),
+                                child: Icon(
+                                  Icons.notifications,
+                                  size: 27,
+                                ),
+                              )
+                            : Icon(
+                                Icons.notifications_outlined,
+                                size: 27,
+                              ),
+                      );
+                    }),
+              if (!FirebaseAuth.instance.currentUser!.isAnonymous)
+                SizedBox(width: 20),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.heavyImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => GroupsMainPage(),
+                    ),
+                  );
+                },
+                child: Icon(
+                  Icons.group_outlined,
+                  size: 30,
+                ),
+              ),
+              SizedBox(width: 20),
+              if (FirebaseAuth.instance.currentUser!.isAnonymous)
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.heavyImpact();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => SignUp(),
+                      ),
+                    );
+                  },
+                  child: Icon(
+                    Icons.person,
+                    size: 30,
+                  ),
+                ),
+              if (!FirebaseAuth.instance.currentUser!.isAnonymous)
+                GestureDetector(
+                  onTap: () async {
+                    HapticFeedback.heavyImpact();
+                    final result = await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => ProfilePage(),
+                      ),
+                    );
+
+                    if (mounted && result != null && result) {
+                      setState(() {
+                        // This will rebuild your widget when you return from the ProfilePage.
+                        // You can also use the result to conditionally rebuild or make updates.
+                      });
+                    }
+                  },
+                  child: Icon(
+                    Icons.person_outline,
+                    size: 30,
+                  ),
+                ),
+            ],
           )
         ],
       ),
